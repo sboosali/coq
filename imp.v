@@ -1784,12 +1784,13 @@ Inductive sinstr : Type :=
    (* 2 3 * 3 4 2 - * + *)
 
 
-Fixpoint popop (stack : list nat) : nat * nat * (list nat) :=
+Definition popop (stack : list nat) : nat * nat * (list nat) :=
   match stack with
     | []  => (0,0,[])
-    | [x] => (x,0,[])
+    | [_] => (0,0,[])
     | x::y::stack => (x,y,stack)
 end.
+
 
 Fixpoint s_execute (st : state) (stack : list nat) 
                    (prog : list sinstr) 
@@ -1875,48 +1876,74 @@ Proof. reflexivity. Qed.
 
 Tactic Notation "descend" constr(f) := unfold f; fold f.
 
+Tactic Notation "ih" constr(IH) := 
+try(rewrite-> IH; rewrite<- IH; apply IH).
+
 Check s_execute.
+
 Lemma exec__commutes__concat :
+forall (ns:list nat) (st:state) (xs: list sinstr) (ys: list sinstr),
+
+s_execute st ns (xs ++ ys)
+=
+(s_execute st (s_execute st ns xs) ys).
+
+Proof. intros.
+
+generalize dependent (ns:list nat).
+generalize dependent ys.
+
+(* aexp_cases (induction x) Case; intros; simpl; auto. *)
+induction xs as [|i is]; auto.
+
+induction l as [|a l]; auto.
+SCase "[]". simpl. destruct i; auto.
+
+induction l as [|b l]; auto.
+SCase "[a]". simpl. destruct i; auto.
+SCase "[a b ..]". simpl. destruct i; auto.
+
+Qed.
+
+
+Lemma compile_compile_compute__commutes:
 forall (sin:sinstr) (ns:list nat) (st:state) (x:aexp) (y:aexp),
 sin = SPlus \/ sin = SMinus \/ sin = SMult ->
 
 s_execute st ns (s_compile x ++ s_compile y ++ [sin])
 =
 s_execute st 
-(s_execute st ns (s_compile y) ++
- s_execute st ns (s_compile x))
-
+(s_execute st
+ (s_execute st ns (s_compile x))
+ (s_compile y))
 [sin].
 
-(* Proof. intros. inversion H; subst; clear H. *)
-(* generalize dependent ([]:list nat). *)
-(* induction x. *)
+Proof. intros. inversion H; clear H;
 
-(* admit. admit. intros.  *)
+rewrite exec__commutes__concat with
+(ns := ns)
+(st := st)
+(xs := s_compile x) 
+(ys := s_compile y ++ [sin]);
 
-(* descend s_execute. *)
+apply exec__commutes__concat.
 
-Admitted.
+Qed.
+
 
 Theorem s_compile_correct : forall (st : state) (e : aexp),
   s_execute st [] (s_compile e) = [ aeval st e ].
 Proof. intros. generalize dependent ([]:list nat).
-aexp_cases (induction e) Case; auto.
+aexp_cases (induction e) Case; auto;
 
-intros. descend s_compile; descend aeval.
+intros; descend s_compile; descend aeval;
 
-rewrite exec__commutes__concat by auto.
-rewrite IHe1; rewrite IHe2.
+rewrite compile_compile_compute__commutes by auto;
+rewrite IHe1; rewrite IHe2;
+simpl; reflexivity.
 
-induction l. simpl. reflexivity.
-simpl. 
+Qed.
 
-(* (a + aeval st e2 :: l) ++  *)
-(* (aeval st e1 :: a :: l) *)
-(* = *)
-(* aeval st e1 + aeval st e2 :: a :: l *)
-
-Admitted.
 
 (** **** Exercise: 5 stars, advanced (break_imp) *)
 Module BreakImp.
