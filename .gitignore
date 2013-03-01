@@ -1,4 +1,7 @@
 *.pdf
+etc/*
+old/*
+orig/*
 
 *.vo
 *.glob
