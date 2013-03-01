@@ -1373,19 +1373,87 @@ Proof.
    Prove that this program executes as intended for X = 2
    (this latter part is trickier than you might expect). *)
 
-Definition pup_to_n : com := 
-Y ::= ANum 1;
-Z ::= ANum 0;
-WHILE (BLe (AId Y) (AId X)) DO
- Z ::= APlus (AId Y) (AId Z);
- Y ::= APlus (ANum 1) (AId Y)
+
+Definition triangle_init :=
+Y ::= ANum 0.
+
+Definition triangle_body :=
+Y ::= APlus (AId Y) (AId X);
+X ::= AMinus (AId X) (ANum 1).
+
+Definition triangle_loop :=
+WHILE (BLe (ANum 1) (AId X)) DO
+ triangle_body
 END.
+
+Definition pup_to_n : com := 
+triangle_init;
+triangle_loop.
 
 Theorem pup_to_2_ceval : 
   pup_to_n / (update empty_state X 2) ||
     update (update (update (update (update (update empty_state
       X 2) Y 0) Y 2) X 1) Y 3) X 0.
-Proof. Admitted.
+
+Proof. Print "_ / _ || _".
+unfold pup_to_n.
+
+(*
+
+        (update
+           (update (update (update (update empty_state X 2) Y 0) Y 2) X 1) Y
+           3) X 0).
+
+X 2) Y 0) Y 2) X 1) Y 3) X 0
+
+*)
+
+set (s0 := update empty_state X 2).
+set (s1 := update s0 Y 0).
+set (s2 := update s1 Y 2).
+set (s3 := update s2 X 1).
+set (s4 := update s3 Y 3).
+set (s5 := update s4 X 0).
+
+apply E_Seq with
+(st   := s0)
+(st'  := s1)
+(st'' := s5).
+
+unfold triangle_init. apply E_Ass. auto.
+
+unfold triangle_loop. apply E_WhileLoop with
+(st   := s1)
+(st'  := s3)
+(st'' := s5). auto.
+
+unfold triangle_body. apply E_Seq with
+(st   := s1)
+(st'  := s2)
+(st'' := s3).
+
+apply E_Ass. auto.
+apply E_Ass. auto.
+
+unfold triangle_loop. apply E_WhileLoop with
+(st   := s3)
+(st'  := s5)
+(st'' := s5). auto.
+
+unfold triangle_body. apply E_Seq with
+(st   := s3)
+(st'  := s4)
+(st'' := s5).
+
+apply E_Ass. auto.
+apply E_Ass. auto.
+
+apply E_WhileEnd with
+(st   := s5).
+
+auto.
+
+Qed.
 
 (* ####################################################### *)
 (** ** Determinism of Evaluation *)
