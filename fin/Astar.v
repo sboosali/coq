@@ -11,6 +11,37 @@ alias="coqtop -I . -emacs -impredicative-set"
 (* Require NodeBasics.Digraphs. *)
 (* Check NodeBasics.Digraphs.Digraph. *)
 
+
+
+Require String. Open Scope string_scope.
+
+Ltac move_to_top x :=
+  match reverse goal with
+  | H : _ |- _ => try move x after H
+  end.
+
+Tactic Notation "assert_eq" ident(x) constr(v) :=
+  let H := fresh in
+  assert (x = v) as H by reflexivity;
+  clear H.
+
+Tactic Notation "Case_aux" ident(x) constr(name) :=
+  first [
+    set (x := name); move_to_top x
+  | assert_eq x name; move_to_top x
+  | fail 1 "because we are working on a different case" ].
+
+Tactic Notation "Case" constr(name) := Case_aux Case name.
+Tactic Notation "SCase" constr(name) := Case_aux SCase name.
+Tactic Notation "SSCase" constr(name) := Case_aux SSCase name.
+Tactic Notation "SSSCase" constr(name) := Case_aux SSSCase name.
+Tactic Notation "SSSSCase" constr(name) := Case_aux SSSSCase name.
+Tactic Notation "SSSSSCase" constr(name) := Case_aux SSSSSCase name.
+Tactic Notation "SSSSSSCase" constr(name) := Case_aux SSSSSSCase name.
+Tactic Notation "SSSSSSSCase" constr(name) := Case_aux SSSSSSSCase name.
+
+
+
 Require Import Bool.
 Open Scope bool_scope.
 Fixpoint beq_nat (n m : nat) : bool :=
@@ -43,28 +74,21 @@ Open Scope list_scope.
 Notation " [ ] " := nil : list_scope.
 Notation " [ x ] " := (cons x nil) : list_scope.
 Notation " [ x , .. , y ] " := (cons x .. (cons y nil) ..) : list_scope.
-Fixpoint elem_nat (x:nat) (ys:list nat) : bool :=
+
+Fixpoint elem {X:Type} {eq:X->X->bool} (x:X) (ys:list X) : bool :=
 match ys with
 | [] => false
-| y::ys => if x==y then true else elem_nat x ys
+| y::ys => if eq x y then true else @elem X eq x ys
 end.
+Definition elem_nat := @elem nat beq_nat.
 Eval simpl in elem_nat 0 [3,2,1].
 Eval simpl in elem_nat 1 [3,2,1].
 
-SearchAbout list.
-(* CoInductive Node := graph : nat -> list Node -> Node. *)
-(* coinductive graph with inductive list 
--> possibly infinite but locally finite graph
--> degree of graph is unbounded but finite
-*)
-(* CoFixpoint g1 := graph 1 [g2, g3] *)
-(* with       g2 := graph 2 [g0] *)
-(* with       g3 := graph 3 nil *)
-(* with       g0 := graph 0 [g0]. *)
 
-CoInductive Node := node : nat -> list (Node * nat) -> Node.
-(* directed weighted connected graph *)
+(* --------------------------------------------------- *)
 
+CoInductive Node := | node : nat -> list (Node * nat) -> Node.
+(* directed weighted connected finite graph *)
 Definition leaf := node 0 [].
 
 CoFixpoint A := node 1 [(B,1), (C,2)]
@@ -75,12 +99,41 @@ with       E := node 5 [(C,2), (F,1)]
 with       F := node 6 [(E,1)]
 with       Z := node 0 [(Z,1)].
 
-Function id (G:Node) : nat := match G with (node n _) => n end.
-Function next (G:Node) := match G with (node _ ys) => ys end.
-Eval simpl in (node (id A) (next A)). (* == A *)
+(* Inductive Node := | node : nat -> list (Node * nat) -> Node. *)
+(* Function A := node 1 [(B,1)] *)
+(* with B := node 2 [(A,1)]. *)
 
-Function h (G:Node) : nat := (*let (n, _) := G in*)
-match id G with
+Definition id (x:Node) : nat := match x with (node n _) => n end.
+Definition edges (x:Node) := match x with (node _ ys) => ys end.
+Definition children (x:Node) := map (@fst Node nat) (edges x).
+Definition beq_node (x:Node) (y:Node) : bool := beq_nat (id x) (id y).
+Definition elem_node := @elem Node beq_node.
+Eval simpl in node (id A) (edges A). (* == A *)
+Eval compute in children A.
+
+
+(* --------------------------------------------------- *)
+
+
+Definition elem_edge := @elem (Node*nat) (fun xw yv =>
+let (x,w):=xw in let (y,v):=yv in beq_node x y && beq_nat w v).
+
+Definition child (y:Node) (x:Node) : bool := elem_node y (children x).
+Eval compute in child B A.
+
+(* reflexive transitive closure of child *)
+Inductive path : Node -> Node -> Type :=
+| r_path : forall x:Node, path x x
+| d_path : forall (x:Node) (y:Node), child y x = true -> path x y
+| t_path : forall (x:Node) (y:Node) (z:Node),
+ path x y -> path y z -> path x y
+.
+
+Definition consistent {x:Node} (h :Node->nat) := forall y wxy,
+elem_edge (y,wxy) (edges x) = true -> h x <= wxy + h y = true.
+
+Function h (x:Node) : nat := (*let (n, _) := G in*)
+match id x with
  | 1 => 2
  | 2 => 2
  | 3 => 1
@@ -90,7 +143,7 @@ match id G with
  | _ => 0
 end.
 
-Function goal (G:Node) : bool := id G == 5.
+Function goal (x:Node) : bool := id x == 5.
 
 Fixpoint put (xgh:Node*nat*nat) (ys:list (Node*nat*nat)) : list (Node*nat*nat) :=
 match xgh with (x,gx,hx) =>
@@ -111,14 +164,6 @@ match yws with
 end.
 Eval simpl in puts 1 (fun _ => 0) [(B,0),(C,1),(D,2)] [(A,0,0),(E,2,2)].
 
-Fixpoint elem_node (x:Node) (ys:list Node) : bool :=
-match ys with
-| [] => false
-| y::ys => if id x == id y then true else elem_node x ys
-end.
-Eval simpl in elem_node Z [C,B,A].
-Eval simpl in elem_node A [C,B,A].
-
 Fixpoint diff (ys:list (Node*nat)) (zs:list Node) :=
 match ys with
 | [] => []
@@ -128,36 +173,63 @@ Eval simpl in diff [(A,0),(B,0),(C,0)] [B,C,D].
 
 Definition Nodes := list Node.
 
-(* astar Node   [(Node,nat,nat)]  [Node]     [Node] *)
+(* astar Node    [(Node,nat,nat)]  [Node]      [Node] *)
 (* astar node    open               closed      goals *)
 (* astar current [(x,g(x),h(x))...] nodes-found goals-found *)
 Inductive astar 
-{h:Node->nat} {goal:Node->bool}
+{start:Node} {h:Node->nat} {goal:Node->bool}
 : Node -> list (Node*nat*nat) -> Nodes -> Nodes
--> Type
-:=
-(* "| halt" would be identity, thus implicit *)
+-> Type :=
 
 (* base case *)
-| init  : forall x:Node,
-  astar x [(x, 0, h x)] [] []
+| init : astar start [(start, 0, h start)] [] []
 
-(* might remove, simplifies computation but complicates induction *)
-| skip : forall (x:Node) (open:list (Node*nat*nat)) (closed:Nodes) (goals:Nodes),
- elem_node x closed = true
- -> forall (z:Node) (gx:nat) (hx:nat), astar z ((x,gx,hx)::open) closed goals
- -> astar z open closed goals
+(* nullop recursion*)
+| skip : forall x y gy hy open closed goals,
+ elem_node y closed = true
+ -> astar x ((y, gy, hy)::open) closed goals
+ -> astar y open closed goals
 
-| pop : forall (x:Node) (open:list (Node*nat*nat)) (closed:Nodes) (goals:Nodes),
- forall (z:Node) (gx:nat) (hx:nat), astar z ((x, gx, hx)::open) closed goals
- -> astar x (puts gx h (diff (next x) closed) open) closed goals
+(* default recursion *)
+| pop : forall x y gy hy open closed goals,
+ goal y = false
+ -> astar x ((y, gy, hy)::open) closed goals
+ -> astar y (puts gy h (edges y) open) (y::closed) goals
 
-(* just liek pop, except for [goal x = true] and [(x::goals)] *)
-| yield : forall (x:Node) (open:list (Node*nat*nat)) (closed:Nodes) (goals:Nodes),
- goal x = true
- -> forall (z:Node) (gx:nat) (hx:nat), astar z ((x, gx, hx)::open) closed goals
- -> astar x (puts gx h (diff (next x) closed) open) closed (x::goals)
- 
+(* output recursion *)
+| yield : forall x y gy hy open closed goals,
+ goal y = true
+ -> astar x ((y, gy, hy)::open) closed goals
+ -> astar y (puts gy h (edges y) open) (y::closed) (y::goals)
+
 .
 
+Check astar_rect.
+Check astar_ind.
+Check astar_rec.
+
+
+(* --------------------------------------------------- *)
+
+(* easier *)
+(* init : [] *)
+(* yield : [] => [y] *)
+(* init => ... => yield *)
+Theorem astar_is_sound :
+forall start h goal x open closed goals y,
+@astar start h goal x open closed (y::goals) -> goal y = true.
+
+Proof. 
+intros start h goal x open closed goals y. intro A.
+remember open. remember closed. remember (y::goals).
+generalize dependent open.
+generalize dependent closed.
+generalize dependent goals.
+
+induction A.
+Case "init". intros. inversion Heql0.
+Case "skip". intros. eapply IHA; eauto. (* induction puts the thing i want (goal y = true) in the induction hypothesis. how does coq do this? that assumption only in yield *)
+Case "pop". intros. eapply IHA; eauto.
+Case "yield". intros. inversion Heql0. subst. assumption.
+Qed.
 
