@@ -111,6 +111,29 @@ Definition elem_node := @elem Node beq_node.
 Eval simpl in node (id A) (edges A). (* == A *)
 Eval compute in children A.
 
+Definition child (y:Node) (x:Node) : bool := elem_node y (children x).
+Eval compute in child B A.
+Notation "y 'child' x" := (child y x) (at level 10, no associativity) : node_scope.
+Open Scope node_scope.
+Eval compute in B child A.
+
+Print Grammar constr.
+
+Fixpoint get {A:Type} {B:Type} {beq:A->A->bool} (key:A) (val:B) (kvs : list (A * B)) : B :=
+match kvs with
+| (k,v)::kvs => if beq k key then v else @get A B beq key val kvs
+| [] => val
+end.
+Definition get_edge key kvs := @get Node nat beq_node key 0 kvs.
+Eval compute in get_edge A [(B,1), (C,2)] == 0.
+Eval compute in get_edge B [(B,1), (C,2)] == 1.
+Eval compute in get_edge C [(B,1), (C,2)] == 2.
+
+Definition weight (x:Node) (y:Node) : nat := get_edge y (edges x).
+Eval compute in weight A D == 0.
+Eval compute in weight A B == 1.
+Eval compute in weight A C == 2.
+
 
 (* --------------------------------------------------- *)
 
@@ -118,19 +141,22 @@ Eval compute in children A.
 Definition elem_edge := @elem (Node*nat) (fun xw yv =>
 let (x,w):=xw in let (y,v):=yv in beq_node x y && beq_nat w v).
 
-Definition child (y:Node) (x:Node) : bool := elem_node y (children x).
-Eval compute in child B A.
-
 (* reflexive transitive closure of child *)
 Inductive path : Node -> Node -> Type :=
 | r_path : forall x:Node, path x x
-| d_path : forall (x:Node) (y:Node), child y x = true -> path x y
+| d_path : forall (x:Node) (y:Node), y child x = true -> path x y
 | t_path : forall (x:Node) (y:Node) (z:Node),
  path x y -> path y z -> path x y
 .
 
-Definition consistent {x:Node} (h :Node->nat) := forall y wxy,
-elem_edge (y,wxy) (edges x) = true -> h x <= wxy + h y = true.
+(* Definition consistent {x:Node} (h :Node->nat) := forall y wxy, *)
+(* elem_edge (y,wxy) (edges x) = true -> h x <= wxy + h y = true. *)
+
+Definition consistent (h:Node->nat) (G:Node) :=
+forall x:Node, path G x (* forall nodes in graph *)
+-> forall y:Node, y child x = true
+-> h y <= h x + weight x y = true
+.
 
 Function h (x:Node) : nat := (*let (n, _) := G in*)
 match id x with
@@ -232,4 +258,19 @@ Case "skip". intros. eapply IHA; eauto. (* induction puts the thing i want (goal
 Case "pop". intros. eapply IHA; eauto.
 Case "yield". intros. inversion Heql0. subst. assumption.
 Qed.
+
+
+(* --------------------------------------------------- *)
+
+(* in graph -> A* out *)
+
+(*
+define. g x = some |path G x|
+define. h y <= h x + d x y
+prove. f y >= f x
+prove. must pop all {x|f(x)=n} before pop any {x|f(x)>n}
+prove. forall n |{x|f(x)=n}| < ∞
+define. f ~> g ~> path
+
+*)
 
