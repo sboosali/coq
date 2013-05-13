@@ -41,6 +41,7 @@ Tactic Notation "SSSSSSCase" constr(name) := Case_aux SSSSSSCase name.
 Tactic Notation "SSSSSSSCase" constr(name) := Case_aux SSSSSSSCase name.
 
 
+Require Import Arith.
 
 Require Import Bool.
 Open Scope bool_scope.
@@ -66,8 +67,8 @@ Fixpoint ble_nat (n m : nat) : bool :=
       | S m' => ble_nat n' m'
       end
   end.
-Notation " x <= y " := (ble_nat x y)
-(at level 70, no associativity) : bool_scope.
+(* Notation " x <= y " := (ble_nat x y) *)
+(* (at level 70, no associativity) : bool_scope. *)
 
 Require Import List.
 Open Scope list_scope.
@@ -117,7 +118,7 @@ Notation "y 'child' x" := (child y x) (at level 10, no associativity) : node_sco
 Open Scope node_scope.
 Eval compute in B child A.
 
-Print Grammar constr.
+(* Print Grammar constr. *)
 
 Fixpoint get {A:Type} {B:Type} {beq:A->A->bool} (key:A) (val:B) (kvs : list (A * B)) : B :=
 match kvs with
@@ -141,13 +142,16 @@ Eval compute in weight A C == 2.
 Definition elem_edge := @elem (Node*nat) (fun xw yv =>
 let (x,w):=xw in let (y,v):=yv in beq_node x y && beq_nat w v).
 
-(* reflexive transitive closure of child *)
+(* Reflexive Transitive closure of child Definition *)
 Inductive path : Node -> Node -> Type :=
 | r_path : forall x:Node, path x x
 | d_path : forall (x:Node) (y:Node), y child x = true -> path x y
 | t_path : forall (x:Node) (y:Node) (z:Node),
- path x y -> path y z -> path x y
-.
+ path x y -> path y z -> path x z.
+Theorem pathAC : path A C. apply (t_path A B C); constructor; auto. Qed.
+Print pathAC.
+
+(* Fixpoint length *)
 
 (* Definition consistent {x:Node} (h :Node->nat) := forall y wxy, *)
 (* elem_edge (y,wxy) (edges x) = true -> h x <= wxy + h y = true. *)
@@ -155,10 +159,24 @@ Inductive path : Node -> Node -> Type :=
 Definition consistent (h:Node->nat) (G:Node) :=
 forall x:Node, path G x (* forall nodes in graph *)
 -> forall y:Node, y child x = true
--> h y <= h x + weight x y = true
-.
+-> h x <= weight x y + h y.
 
-Function h (x:Node) : nat := (*let (n, _) := G in*)
+Require Import NPeano.
+
+(* prove that  f y >= f x *)
+Theorem f_is_monotonic :
+forall (x:Node) (y:Node), y child x = true ->
+forall (gx:nat) (h:Node->nat), consistent h x ->
+gx + h x <= gx + weight x y + h y.
+(* by definition. f x = g x + h x *)
+(* by definition. g y = g x + w x y *)
+Proof. intros x y Child gx h Consistent.
+rewrite<- plus_assoc.
+rewrite<- (Nat.add_le_mono_l (h x) (weight x y + h y) gx).
+apply Consistent; auto; constructor.
+Qed.
+
+Function h1 (x:Node) : nat := (*let (n, _) := G in*)
 match id x with
  | 1 => 2
  | 2 => 2
@@ -169,13 +187,13 @@ match id x with
  | _ => 0
 end.
 
-Function goal (x:Node) : bool := id x == 5.
+Function goal1 (x:Node) : bool := id x == 5.
 
 Fixpoint put (xgh:Node*nat*nat) (ys:list (Node*nat*nat)) : list (Node*nat*nat) :=
 match xgh with (x,gx,hx) =>
 match ys with
 | [] => [(x,gx,hx)]
-| (y,gy,hy)::ys => if gy+hy <= gx+hx 
+| (y,gy,hy)::ys => if ble_nat (gy+hy) (gx+hx)
                    then (y,gy,hy) :: put (x,gx,hx) ys
                    else (x,gx,hx) :: (y,gy,hy) :: ys
 end end.
@@ -205,7 +223,7 @@ Definition Nodes := list Node.
 Inductive astar 
 {start:Node} {h:Node->nat} {goal:Node->bool}
 : Node -> list (Node*nat*nat) -> Nodes -> Nodes
--> Type :=
+-> Prop :=
 
 (* base case *)
 | init : astar start [(start, 0, h start)] [] []
@@ -230,9 +248,9 @@ Inductive astar
 
 .
 
-Check astar_rect.
 Check astar_ind.
-Check astar_rec.
+(* Check astar_rect. *)
+(* Check astar_rec. *)
 
 
 (* --------------------------------------------------- *)
@@ -246,26 +264,25 @@ forall start h goal x open closed goals y,
 @astar start h goal x open closed (y::goals) -> goal y = true.
 
 Proof. 
-intros start h goal x open closed goals y. intro A.
+intros start h goal x open closed goals y. intro AA.
 remember open. remember closed. remember (y::goals).
 generalize dependent open.
 generalize dependent closed.
 generalize dependent goals.
 
-induction A.
+induction AA.
 Case "init". intros. inversion Heql0.
-Case "skip". intros. eapply IHA; eauto. (* induction puts the thing i want (goal y = true) in the induction hypothesis. how does coq do this? that assumption only in yield *)
-Case "pop". intros. eapply IHA; eauto.
+Case "skip". intros. eapply IHAA; eauto. (* induction puts the thing i want (goal y = true) in the induction hypothesis. how does coq do this? that assumption only in yield *)
+Case "pop". intros. eapply IHAA; eauto.
 Case "yield". intros. inversion Heql0. subst. assumption.
 Qed.
 
 
 (* --------------------------------------------------- *)
 
-(* in graph -> A* out *)
 
 (*
-define. g x = some |path G x|
+define. g x = |path G x|
 define. h y <= h x + d x y
 prove. f y >= f x
 prove. must pop all {x|f(x)=n} before pop any {x|f(x)>n}
@@ -274,3 +291,23 @@ define. f ~> g ~> path
 
 *)
 
+(*
+try proving easier theorem, that BFS is complete
+
+BFS is A* with
+h _ = 0
+w _ _ = 1
+
+thus
+f = g + h = g = depth
+*)
+
+(* in graph -> A* out *)
+Theorem astar_is_complete :
+forall (G:Node) (z:Node) (h:Node->nat) (goal:Node->bool),
+path G z  ->  goal z = true  ->
+consistent h G  ->  (* h z + length (path G z)  -> *)
+exists x open closed goals, @astar G h goal x open closed (z::goals).
+
+Proof. intros G z h goal Path IsGoal Consistent.
+Admitted.
