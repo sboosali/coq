@@ -1,4 +1,5 @@
 Require Import Omega.
+Require Import NPeano.
 
 (* --------------------------------------------------- *)
 (* Helpers *)
@@ -81,7 +82,7 @@ Eval simpl in elem_nat 1 [3,2,1].
 (* Graph *)
 
 CoInductive Node := | node : nat -> list (Node * nat) -> Node.
-(* directed weighted connected finite graph *)
+(* directed weighted connected locally-finite graph *)
 Definition leaf := node 0 [].
 
 CoFixpoint A := node 1 [(B,1), (C,2)]
@@ -91,10 +92,6 @@ with       D := node 4 [(B,1), (C,1), (E,1)]
 with       E := node 5 [(C,2), (F,1)]
 with       F := node 6 [(E,1)]
 with       Z := node 0 [(Z,1)].
-
-(* Inductive Node := | node : nat -> list (Node * nat) -> Node. *)
-(* Function A := node 1 [(B,1)] *)
-(* with B := node 2 [(A,1)]. *)
 
 Definition id (x:Node) : nat := match x with (node n _) => n end.
 Definition edges (x:Node) := match x with (node _ ys) => ys end.
@@ -109,8 +106,6 @@ Eval compute in child B A.
 Notation "y 'child' x" := (child y x) (at level 10, no associativity) : node_scope.
 Open Scope node_scope.
 Eval compute in B child A.
-
-(* Print Grammar constr. *)
 
 Fixpoint get {A:Type} {B:Type} {beq:A->A->bool} (key:A) (val:B) (kvs : list (A * B)) : B :=
 match kvs with
@@ -146,11 +141,11 @@ Print pathAC.
 Fixpoint path_length {a b:Node} (p:path a b) : nat :=
 match p with
 | r_path _ => 0
-| t_path x y z _ path_yz => weight x y + path_length path_yz (* todo weights *)
+| t_path x y z _ path_yz => weight x y + path_length path_yz
 end.
 Eval compute in path_length pathAC.
 
-(* prove arbitrary transitivity *)
+(*todo prove arbitrary transitivity *)
 
 
 (* --------------------------------------------------- *)
@@ -163,8 +158,6 @@ Definition consistent (h:Node->nat) (G:Node) :=
 forall x:Node, path G x (* forall nodes in graph *)
 -> forall y:Node, y child x = true
 -> h x <= weight x y + h y.
-
-Require Import NPeano.
 
 (* prove that  f y >= f x *)
 Theorem f_is_monotonic :
@@ -215,6 +208,22 @@ Definition Nodes := list Node.
 (* astar node    open               closed      goals *)
 (* astar current [(x,g(x),h(x))...] nodes-found goals-found *)
 
+Inductive Maybe (A:Type) : Type :=
+| None : Maybe A
+| Just : A -> Maybe A.
+
+(* A* on an infinite graph with no goal node will run forever.
+   if A* is made to yield goals (like a generator), it runs forever.
+   even on a graph with a node, A* runs in finite but unbounded time.
+   thus, the Fixpoint A* decreases on some halting paramaeter.
+
+   to simplify proofs, A* here only returns the node (or nothing),
+   but it could be extended to return the path to the node.
+*)
+Fixpoint astar {h:Node->nat} {goal:Node->bool}
+(open:list (Node*nat*nat)) (closed:list Node) : Maybe Node :=
+@None Node.
+
 (* --------------------------------------------------- *)
 (* e.g. *)
 
@@ -247,13 +256,6 @@ define. f ~> g ~> path
 *)
 
 (* in graph -> A* out *)
-Theorem astar_is_complete :
-forall (G:Node) (z:Node) (h:Node->nat) (goal:Node->bool),
-path G z  ->  goal z = true  ->
-consistent h G  ->  (* h z + length (path G z)  -> *)
-exists x open closed goals, @astar G h goal x open closed (z::goals).
-
-Proof.
 (*
 A* will pop every node of some f-value (= f_max) or less in finite time.
 in particular, a goal node (with some path) z has some f(z) = g(z) + h(z) (where h is just a function and g depends on the path). this, as a function of the nodes with smaller or equal f-values, bounds the number of steps that A* must take before getting to z.
@@ -279,5 +281,6 @@ f = g + h = g = depth
 but i ran out of time
 *)
 
-Admitted.
-
+(* --------------------------------------------------- *)
+(* etc *)
+Print Grammar constr.
