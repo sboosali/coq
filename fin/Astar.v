@@ -208,9 +208,14 @@ Definition Nodes := list Node.
 (* astar node    open               closed      goals *)
 (* astar current [(x,g(x),h(x))...] nodes-found goals-found *)
 
-Inductive Maybe (A:Type) : Type :=
+(* Inductive Maybe : Type -> Type := *)
+(* | None : forall (A:Type), Maybe A *)
+(* | Just : forall (A:Type), A -> Maybe A. *)
+Inductive Maybe (A:Type) :=
 | None : Maybe A
 | Just : A -> Maybe A.
+Implicit Arguments None [A].
+Implicit Arguments Just [A].
 
 (* A* on an infinite graph with no goal node will run forever.
    if A* is made to yield goals (like a generator), it runs forever.
@@ -219,15 +224,30 @@ Inductive Maybe (A:Type) : Type :=
 
    to simplify proofs, A* here only returns the node (or nothing),
    but it could be extended to return the path to the node.
+
+   store (x, gx, hx) in priority queue with priority fx=gx+hx
 *)
 Fixpoint astar {h:Node->nat} {goal:Node->bool}
-(open:list (Node*nat*nat)) (closed:list Node) : Maybe Node :=
-@None Node.
+(i:nat) (open:list (Node*nat*nat)) (closed:list Node) : Maybe Node :=
+match i with
+| O => None
+| S i =>
+ match open with
+ | [] => None
+ | ((x,gx,hx)::open) => 
+ (* skip *)
+ if elem_node x closed then @astar h goal i open closed
+ (* return goal *)
+ else if goal x then Just x
+ (* recur *)
+ else @astar h goal i (puts gx h (edges x) open) (x::closed)
+ end
+end.
 
 (* --------------------------------------------------- *)
 (* e.g. *)
 
-Function h1 (x:Node) : nat := (*let (n, _) := G in*)
+Function h (x:Node) : nat :=
 match id x with
  | 1 => 2
  | 2 => 2
@@ -238,7 +258,12 @@ match id x with
  | _ => 0
 end.
 
-Function goal1 (x:Node) : bool := id x == 5.
+Function goal (x:Node) : bool := id x == 5. (* E *)
+
+Eval compute in @astar h goal 10 [(A,0,h A)] [].
+
+
+
 
 (* --------------------------------------------------- *)
 (* astar is sound *)
@@ -260,7 +285,7 @@ define. f ~> g ~> path
 A* will pop every node of some f-value (= f_max) or less in finite time.
 in particular, a goal node (with some path) z has some f(z) = g(z) + h(z) (where h is just a function and g depends on the path). this, as a function of the nodes with smaller or equal f-values, bounds the number of steps that A* must take before getting to z.
 
-the problem is that since f is only monotonic. i.e. f(y) >= f(x) implies that f(y) may equal f(x); however, each time a neighbor y of node x is pushed onto the priority queue with priortity f(y), since the weights of the graph are strictly positive, g(y) > g(x), and for f(y) = f(x), then it must be that h(y) < h(x); h is nonnegative, so after finitely many such steps, h will decrease to zero, and then g must increase until it is the f_max.
+the problem is that since f is only monotonic. i.e. f(y) >= f(x) implies that f(y) may equal f(x); however, each time a child y of node x is pushed onto the priority queue with priortity f(y), since the weights of the graph are strictly positive, g(y) > g(x), and for f(y) = f(x), then it must be that h(y) < h(x); h is nonnegative, so after finitely many such steps, h will decrease to zero, and then g must increase until it is the f_max.
 
 for this, i could define an A* Fixpoint that decreases on the f-value. however, since there are a few arguments that may decrease:
 f_max - f_curr  ==>  0
