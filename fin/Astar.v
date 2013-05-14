@@ -1,17 +1,7 @@
-(*
-*** Local Variables: ***
-*** coq-prog-name: "coqtop -I . -emacs -impredicative-set"
-***** End: ***
-in my .bashrc
-alias="coqtop -I . -emacs -impredicative-set"
-*)
+Require Import Omega.
 
-(* Add Rec LoadPath "NodeBasics". *)
-(* Print LoadPath. *)
-(* Require NodeBasics.Digraphs. *)
-(* Check NodeBasics.Digraphs.Digraph. *)
-
-
+(* --------------------------------------------------- *)
+(* Helpers *)
 
 Require String. Open Scope string_scope.
 
@@ -70,6 +60,7 @@ Fixpoint ble_nat (n m : nat) : bool :=
 (* Notation " x <= y " := (ble_nat x y) *)
 (* (at level 70, no associativity) : bool_scope. *)
 
+
 Require Import List.
 Open Scope list_scope.
 Notation " [ ] " := nil : list_scope.
@@ -87,6 +78,7 @@ Eval simpl in elem_nat 1 [3,2,1].
 
 
 (* --------------------------------------------------- *)
+(* Graph *)
 
 CoInductive Node := | node : nat -> list (Node * nat) -> Node.
 (* directed weighted connected finite graph *)
@@ -137,21 +129,32 @@ Eval compute in weight A C == 2.
 
 
 (* --------------------------------------------------- *)
-
+(* Path *)
 
 Definition elem_edge := @elem (Node*nat) (fun xw yv =>
 let (x,w):=xw in let (y,v):=yv in beq_node x y && beq_nat w v).
 
 (* Reflexive Transitive closure of child Definition *)
 Inductive path : Node -> Node -> Type :=
-| r_path : forall x:Node, path x x
-| d_path : forall (x:Node) (y:Node), y child x = true -> path x y
+| r_path : forall (x:Node), path x x
 | t_path : forall (x:Node) (y:Node) (z:Node),
- path x y -> path y z -> path x z.
-Theorem pathAC : path A C. apply (t_path A B C); constructor; auto. Qed.
+ y child x = true -> path y z -> path x z.
+Theorem pathAC : path A C. Proof with auto.
+apply (t_path A B C)... apply (t_path B C C)... constructor. Qed.
 Print pathAC.
 
-(* Fixpoint length *)
+Fixpoint path_length {a b:Node} (p:path a b) : nat :=
+match p with
+| r_path _ => 0
+| t_path x y z _ path_yz => weight x y + path_length path_yz (* todo weights *)
+end.
+Eval compute in path_length pathAC.
+
+(* prove arbitrary transitivity *)
+
+
+(* --------------------------------------------------- *)
+(* f = g + h *)
 
 (* Definition consistent {x:Node} (h :Node->nat) := forall y wxy, *)
 (* elem_edge (y,wxy) (edges x) = true -> h x <= wxy + h y = true. *)
@@ -175,19 +178,10 @@ rewrite<- plus_assoc.
 rewrite<- (Nat.add_le_mono_l (h x) (weight x y + h y) gx).
 apply Consistent; auto; constructor.
 Qed.
+(* unfold Consistent; omega. *)
 
-Function h1 (x:Node) : nat := (*let (n, _) := G in*)
-match id x with
- | 1 => 2
- | 2 => 2
- | 3 => 1
- | 4 => 1
- | 5 => 0
- | 6 => 0
- | _ => 0
-end.
-
-Function goal1 (x:Node) : bool := id x == 5.
+(* --------------------------------------------------- *)
+(* astar *)
 
 Fixpoint put (xgh:Node*nat*nat) (ys:list (Node*nat*nat)) : list (Node*nat*nat) :=
 match xgh with (x,gx,hx) =>
@@ -220,66 +214,28 @@ Definition Nodes := list Node.
 (* astar Node    [(Node,nat,nat)]  [Node]      [Node] *)
 (* astar node    open               closed      goals *)
 (* astar current [(x,g(x),h(x))...] nodes-found goals-found *)
-Inductive astar 
-{start:Node} {h:Node->nat} {goal:Node->bool}
-: Node -> list (Node*nat*nat) -> Nodes -> Nodes
--> Prop :=
-
-(* base case *)
-| init : astar start [(start, 0, h start)] [] []
-
-(* nullop recursion*)
-| skip : forall x y gy hy open closed goals,
- elem_node y closed = true
- -> astar x ((y, gy, hy)::open) closed goals
- -> astar y open closed goals
-
-(* default recursion *)
-| pop : forall x y gy hy open closed goals,
- goal y = false
- -> astar x ((y, gy, hy)::open) closed goals
- -> astar y (puts gy h (edges y) open) (y::closed) goals
-
-(* output recursion *)
-| yield : forall x y gy hy open closed goals,
- goal y = true
- -> astar x ((y, gy, hy)::open) closed goals
- -> astar y (puts gy h (edges y) open) (y::closed) (y::goals)
-
-.
-
-Check astar_ind.
-(* Check astar_rect. *)
-(* Check astar_rec. *)
-
 
 (* --------------------------------------------------- *)
+(* e.g. *)
 
-(* easier *)
-(* init : [] *)
-(* yield : [] => [y] *)
-(* init => ... => yield *)
-Theorem astar_is_sound :
-forall start h goal x open closed goals y,
-@astar start h goal x open closed (y::goals) -> goal y = true.
+Function h1 (x:Node) : nat := (*let (n, _) := G in*)
+match id x with
+ | 1 => 2
+ | 2 => 2
+ | 3 => 1
+ | 4 => 1
+ | 5 => 0
+ | 6 => 0
+ | _ => 0
+end.
 
-Proof. 
-intros start h goal x open closed goals y. intro AA.
-remember open. remember closed. remember (y::goals).
-generalize dependent open.
-generalize dependent closed.
-generalize dependent goals.
-
-induction AA.
-Case "init". intros. inversion Heql0.
-Case "skip". intros. eapply IHAA; eauto. (* induction puts the thing i want (goal y = true) in the induction hypothesis. how does coq do this? that assumption only in yield *)
-Case "pop". intros. eapply IHAA; eauto.
-Case "yield". intros. inversion Heql0. subst. assumption.
-Qed.
-
+Function goal1 (x:Node) : bool := id x == 5.
 
 (* --------------------------------------------------- *)
+(* astar is sound *)
 
+(* --------------------------------------------------- *)
+(* astar is complete *)
 
 (*
 define. g x = |path G x|
@@ -288,18 +244,6 @@ prove. f y >= f x
 prove. must pop all {x|f(x)=n} before pop any {x|f(x)>n}
 prove. forall n |{x|f(x)=n}| < ∞
 define. f ~> g ~> path
-
-*)
-
-(*
-try proving easier theorem, that BFS is complete
-
-BFS is A* with
-h _ = 0
-w _ _ = 1
-
-thus
-f = g + h = g = depth
 *)
 
 (* in graph -> A* out *)
@@ -309,5 +253,31 @@ path G z  ->  goal z = true  ->
 consistent h G  ->  (* h z + length (path G z)  -> *)
 exists x open closed goals, @astar G h goal x open closed (z::goals).
 
-Proof. intros G z h goal Path IsGoal Consistent.
+Proof.
+(*
+A* will pop every node of some f-value (= f_max) or less in finite time.
+in particular, a goal node (with some path) z has some f(z) = g(z) + h(z) (where h is just a function and g depends on the path). this, as a function of the nodes with smaller or equal f-values, bounds the number of steps that A* must take before getting to z.
+
+the problem is that since f is only monotonic. i.e. f(y) >= f(x) implies that f(y) may equal f(x); however, each time a neighbor y of node x is pushed onto the priority queue with priortity f(y), since the weights of the graph are strictly positive, g(y) > g(x), and for f(y) = f(x), then it must be that h(y) < h(x); h is nonnegative, so after finitely many such steps, h will decrease to zero, and then g must increase until it is the f_max.
+
+for this, i could define an A* Fixpoint that decreases on the f-value. however, since there are a few arguments that may decrease:
+f_max - f_curr  ==>  0
+f_max - g_curr  ==>  0
+h_curr          ==>  0
+
+g always increases, but either f increases or h decreases, and i think i need to prove this non-structural recursion terminates (like you do with mergesort).
+
+i thought of proving an easier theorem, that BFS is complete (perhaps strengthening the assumptions with knowing the maximum breadth), as an instance of my definition of A*.
+
+BFS is A* with
+h _ = 0
+w _ _ = 1
+
+thus
+f = g + h = g = depth
+
+but i ran out of time
+*)
+
 Admitted.
+
