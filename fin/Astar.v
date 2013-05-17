@@ -134,15 +134,20 @@ Inductive path : Node -> Node -> Type :=
 | r_path : forall (x:Node), path x x
 | t_path : forall (x:Node) (y:Node) (z:Node),
  y child x = true -> path y z -> path x z.
-Theorem pathAC : path A C. Proof with auto.
-apply (t_path A B C)... apply (t_path B C C)... constructor. Qed.
-Print pathAC.
 
 Fixpoint path_length {a b:Node} (p:path a b) : nat :=
 match p with
 | r_path _ => 0
 | t_path x y z _ path_yz => weight x y + path_length path_yz
 end.
+
+
+Definition pathAC : path A C :=
+t_path A B C eq_refl (t_path B C C eq_refl (r_path C)).
+Print pathAC.
+(* apply (t_path A B C)... apply (t_path B C C)... constructor. *)
+(* Theorems are opaque, Definitions are transparent *)
+(* take Theorem to Definition: define with Theorem (e.g. using automatic theorem proving tactics), then copypaste Proof object into Definition *)
 Eval compute in path_length pathAC.
 
 (*todo prove arbitrary transitivity *)
@@ -243,6 +248,7 @@ match i with
  else @astar h goal i (puts gx h (edges x) open) (x::closed)
  end
 end.
+(* todo zip not puts *)
 
 (* --------------------------------------------------- *)
 (* e.g. *)
@@ -267,6 +273,8 @@ Eval compute in @astar h goal 10 [(A,0,h A)] [].
 
 (* --------------------------------------------------- *)
 (* astar is sound *)
+
+
 
 (* --------------------------------------------------- *)
 (* astar is complete *)
