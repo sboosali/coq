@@ -1,6 +1,11 @@
 Require Import Omega.
 Require Import NPeano.
 
+(* autocomplete
+SearchAbout
+
+*)
+
 (* --------------------------------------------------- *)
 (* Helpers *)
 
@@ -63,6 +68,7 @@ Fixpoint ble_nat (n m : nat) : bool :=
 
 
 Require Import List.
+Require Import Coq.Lists.List.
 Open Scope list_scope.
 Notation " [ ] " := nil : list_scope.
 Notation " [ x ] " := (cons x nil) : list_scope.
@@ -85,27 +91,27 @@ CoInductive Node := | node : nat -> list (Node * nat) -> Node.
 (* directed weighted connected locally-finite graph *)
 Definition leaf := node 0 [].
 
-CoFixpoint A := node 1 [(B,1), (C,2)]
-with       B := node 2 [(A,1), (C,1), (D,1)]
-with       C := node 3 [(A,2), (B,1), (E,2)]
-with       D := node 4 [(B,1), (C,1), (E,1)]
-with       E := node 5 [(C,2), (F,1)]
-with       F := node 6 [(E,1)]
-with       Z := node 0 [(Z,1)].
+CoFixpoint x1 := node 1 [(x2,1), (x3,2)]
+with       x2 := node 2 [(x1,1), (x3,1), (x4,1)]
+with       x3 := node 3 [(x1,2), (x2,1), (x5,2)]
+with       x4 := node 4 [(x2,1), (x3,1), (x5,1)]
+with       x5 := node 5 [(x3,2), (x6,1)]
+with       x6 := node 6 [(x5,1)]
+with       x0 := node 0 [(x0,1)].
 
 Definition id (x:Node) : nat := match x with (node n _) => n end.
 Definition edges (x:Node) := match x with (node _ ys) => ys end.
 Definition children (x:Node) := map (@fst Node nat) (edges x).
 Definition beq_node (x:Node) (y:Node) : bool := beq_nat (id x) (id y).
 Definition elem_node := @elem Node beq_node.
-Eval simpl in node (id A) (edges A). (* == A *)
-Eval compute in children A.
+Eval simpl in node (id x1) (edges x1). (* == A *)
+Eval compute in children x1.
 
 Definition child (y:Node) (x:Node) : bool := elem_node y (children x).
-Eval compute in child B A.
+Eval compute in child x2 x1.
 Notation "y 'child' x" := (child y x) (at level 10, no associativity) : node_scope.
 Open Scope node_scope.
-Eval compute in B child A.
+Eval compute in x2 child x1.
 
 Fixpoint get {A:Type} {B:Type} {beq:A->A->bool} (key:A) (val:B) (kvs : list (A * B)) : B :=
 match kvs with
@@ -113,15 +119,14 @@ match kvs with
 | [] => val
 end.
 Definition get_edge key kvs := @get Node nat beq_node key 0 kvs.
-Eval compute in get_edge A [(B,1), (C,2)] == 0.
-Eval compute in get_edge B [(B,1), (C,2)] == 1.
-Eval compute in get_edge C [(B,1), (C,2)] == 2.
+Eval compute in get_edge x1 [(x2,1), (x3,2)] == 0.
+Eval compute in get_edge x2 [(x2,1), (x3,2)] == 1.
+Eval compute in get_edge x3 [(x2,1), (x3,2)] == 2.
 
 Definition weight (x:Node) (y:Node) : nat := get_edge y (edges x).
-Eval compute in weight A D == 0.
-Eval compute in weight A B == 1.
-Eval compute in weight A C == 2.
-
+Eval compute in weight x1 x4 == 0.
+Eval compute in weight x1 x2 == 1.
+Eval compute in weight x1 x3 == 2.
 
 (* --------------------------------------------------- *)
 (* Path *)
@@ -141,114 +146,62 @@ match p with
 | t_path x y z _ path_yz => weight x y + path_length path_yz
 end.
 
-
-Definition pathAC : path A C :=
-t_path A B C eq_refl (t_path B C C eq_refl (r_path C)).
-Print pathAC.
+Definition path12 : path x1 x3 :=
+t_path x1 x2 x3 eq_refl (t_path x2 x3 x3 eq_refl (r_path x3)).
+Print path12.
 (* apply (t_path A B C)... apply (t_path B C C)... constructor. *)
 (* Theorems are opaque, Definitions are transparent *)
 (* take Theorem to Definition: define with Theorem (e.g. using automatic theorem proving tactics), then copypaste Proof object into Definition *)
-Eval compute in path_length pathAC.
+Eval compute in path_length path12.
 
 (*todo prove arbitrary transitivity *)
-
 
 (* --------------------------------------------------- *)
 (* f = g + h *)
 
-(* Definition consistent {x:Node} (h :Node->nat) := forall y wxy, *)
-(* elem_edge (y,wxy) (edges x) = true -> h x <= wxy + h y = true. *)
+Fixpoint g' (xys:list Node) :=
+match xys with
+| (x::ys) =>
+ match ys with
+ | (y::_) => weight x y + g' ys
+ | [] => 0
+ end
+| _ => 0
+end.
+(* astar grows path by cons i.e. backwards *)
+Function g (path:list Node) : nat := g' (rev path).
+Eval compute in g [x3,x2,x1] == 2.
+Eval compute in g [x5,x3,x1] == 4.
 
-Definition consistent (h:Node->nat) (G:Node) :=
-forall x:Node, path G x (* forall nodes in graph *)
+Function f (h:Node->nat) (xs:list Node) :=
+match xs with
+| x::xs => g (x::xs) + h x (* path cost + heuristic *)
+| _ => 0 (* never *)
+end.
+
+(* the path cost function "g" is the same for all graphs *)
+(* the heuristic "h" must be consistent wrt some graph (assumed in proofs with "f", not in definition of "f") *)
+(* any A* shares "f" and "g", while "h" and "goal" are params *)
+
+Definition consistent (h:Node->nat) :=
+forall (x:Node) (G:Node), path G x (* forall nodes in graph *)
 -> forall y:Node, y child x = true
 -> h x <= weight x y + h y.
 
-(* prove that  f y >= f x *)
 Theorem f_is_monotonic :
-forall (x:Node) (y:Node), y child x = true ->
-forall (gx:nat) (h:Node->nat), consistent h x ->
-gx + h x <= gx + weight x y + h y.
+forall (xs:list Node) (x:Node) (y:Node), 
+y child x = true -> weight x y > 0 ->
+forall (h:Node->nat), consistent h ->
+(f h) (x::xs) <= (f h) (y::x::xs).
 (* by definition. f x = g x + h x *)
 (* by definition. g y = g x + w x y *)
-Proof. intros x y Child gx h Consistent.
-rewrite<- plus_assoc.
-rewrite<- (Nat.add_le_mono_l (h x) (weight x y + h y) gx).
-apply Consistent; auto; constructor.
-Qed.
+Proof. intros xs x y Child Positive h Consistent.
+unfold f. unfold g. Admitted.
+(* rewrite<- plus_assoc. *)
+(* rewrite<- (Nat.add_le_mono_l (h x) (weight x y + h y) gx). *)
+(* apply Consistent; auto; constructor. *)
+(* Qed. *)
 (* unfold Consistent; omega. *)
-
-(* --------------------------------------------------- *)
-(* astar *)
-
-Fixpoint put (xgh:Node*nat*nat) (ys:list (Node*nat*nat)) : list (Node*nat*nat) :=
-match xgh with (x,gx,hx) =>
-match ys with
-| [] => [(x,gx,hx)]
-| (y,gy,hy)::ys => if ble_nat (gy+hy) (gx+hx)
-                   then (y,gy,hy) :: put (x,gx,hx) ys
-                   else (x,gx,hx) :: (y,gy,hy) :: ys
-end end.
-Eval simpl in put (B,1,2) [(A,2,1),(C,2,2)].
-Eval simpl in put (A,1,1) [(B,2,1),(C,1,2)].
-Eval simpl in put (C,2,2) [(A,2,1),(B,1,2)].
-
-Fixpoint puts (gx:nat) (h:Node->nat) (yws:list (Node*nat)) (q:list (Node*nat*nat)) : list (Node*nat*nat) :=
-match yws with
-| [] => q
-| (y,w)::ys => puts gx h ys (put (y, gx + w, h y) q)
-end.
-Eval simpl in puts 1 (fun _ => 0) [(B,0),(C,1),(D,2)] [(A,0,0),(E,2,2)].
-
-Fixpoint diff (ys:list (Node*nat)) (zs:list Node) :=
-match ys with
-| [] => []
-| (y,w)::ys => if elem_node y zs then diff ys zs else (y,w) :: diff ys zs
-end.
-Eval simpl in diff [(A,0),(B,0),(C,0)] [B,C,D].
-
-Definition Nodes := list Node.
-
-(* astar Node    [(Node,nat,nat)]  [Node]      [Node] *)
-(* astar node    open               closed      goals *)
-(* astar current [(x,g(x),h(x))...] nodes-found goals-found *)
-
-(* Inductive Maybe : Type -> Type := *)
-(* | None : forall (A:Type), Maybe A *)
-(* | Just : forall (A:Type), A -> Maybe A. *)
-Inductive Maybe (A:Type) :=
-| None : Maybe A
-| Just : A -> Maybe A.
-Implicit Arguments None [A].
-Implicit Arguments Just [A].
-
-(* A* on an infinite graph with no goal node will run forever.
-   if A* is made to yield goals (like a generator), it runs forever.
-   even on a graph with a node, A* runs in finite but unbounded time.
-   thus, the Fixpoint A* decreases on some halting paramaeter.
-
-   to simplify proofs, A* here only returns the node (or nothing),
-   but it could be extended to return the path to the node.
-
-   store (x, gx, hx) in priority queue with priority fx=gx+hx
-*)
-Fixpoint astar {h:Node->nat} {goal:Node->bool}
-(i:nat) (open:list (Node*nat*nat)) (closed:list Node) : Maybe Node :=
-match i with
-| O => None
-| S i =>
- match open with
- | [] => None
- | ((x,gx,hx)::open) => 
- (* skip *)
- if elem_node x closed then @astar h goal i open closed
- (* return goal *)
- else if goal x then Just x
- (* recur *)
- else @astar h goal i (puts gx h (edges x) open) (x::closed)
- end
-end.
-(* todo zip not puts *)
 
 (* --------------------------------------------------- *)
 (* e.g. *)
@@ -264,10 +217,82 @@ match id x with
  | _ => 0
 end.
 
-Function goal (x:Node) : bool := id x == 5. (* E *)
+Definition f' := f h.
 
-Eval compute in @astar h goal 10 [(A,0,h A)] [].
+Function goal (x:Node) : bool := id x == 5. (* x5 is goal *)
 
+(* --------------------------------------------------- *)
+(* astar *)
+
+(* put into priority queue *)
+Fixpoint put {A:Type} (f:A->nat) (x:A) (ys:list A) : list A :=
+match ys with
+| [] => [x]
+(* like queue on same priority i.e. first in first out *)
+| (y::ys) => if ble_nat (f y) (f x)
+             then y :: put f x ys
+             else x :: y :: ys
+end.
+Definition I {A:Type} (x:A) : A := x.
+(* base case *)
+Eval simpl in put I 1 [].
+(* put lesser before *)
+Eval simpl in put I 1 [2].
+(* put same after *)
+Eval simpl in put (fun _ => 0) 2 [1].
+(* put greater after *)
+Eval simpl in put I 2 [1].
+
+SearchAbout list.
+Definition puts {A:Type} (f:A->nat) (xs:list A) (ys:list A) : list A 
+:= fold_left (fun ys x => put f x ys) xs ys.
+Eval simpl in puts I [1,2,4,5] [3].
+Eval simpl in puts (fun _ => 0) [2] [1].
+
+Inductive Maybe (A:Type) :=
+| None : Maybe A
+| Just : A -> Maybe A.
+Arguments None [A].
+Implicit Arguments Just [A].
+Check None.
+Check Just 0.
+
+Definition Nodes := list Node.
+
+(* A* on an infinite graph with no goal node will run forever.
+   if A* is made to yield goals (like a generator), it runs forever.
+   even on a graph with a node, A* runs in finite but unbounded time.
+   thus, the Fixpoint A* decreases on some halting paramaeter.
+
+   to simplify proofs, A* here only returns the node (or nothing),
+   but it could be extended to return the path to the node.
+
+   store (x, gx, hx) in priority queue with priority fx=gx+hx
+
+   open ~ todo  .  closed ~ done
+*)
+
+Fixpoint astar {f:list Node -> nat} {goal:Node->bool}
+(i:nat) (open:list (list Node)) (closed:list Node)
+: list Node * list Node :=
+match i with
+| O => ([] , closed)
+| S i =>
+ match open with
+ | [] => ([] , closed)
+ | xs::open => match xs with | [] => ([] , closed) | x::xs =>
+ (* skip *)
+ if elem_node x closed then @astar f goal i open closed
+ (* return goal *)
+ else if goal x then (rev (x::xs) , (x::closed))
+ (* recur *)
+ else @astar f goal i (puts f (map (fun y => y::x::xs) (children x)) open) (x::closed)
+end end end.
+
+Definition eg_astar i G := 
+let (path,seen) := @astar f' goal i [[G]] []
+in (map id path, map id seen).
+Eval compute in eg_astar 10 x1.
 
 
 
@@ -317,3 +342,5 @@ but i ran out of time
 (* --------------------------------------------------- *)
 (* etc *)
 Print Grammar constr.
+
+
