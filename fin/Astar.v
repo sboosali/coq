@@ -363,9 +363,64 @@ in (map id (rev path), map id seen).
 Eval compute in eg_astar 10 x1.
 
 
+Fixpoint astar' {h:Node->nat} {goal:Node->bool}
+(i:nat) (open:list (list Node)) (closed:list Node)
+: list Node :=
+let f := f h in
+match i with
+| O => []
+| S i =>
+ match open with
+ | [] => []
+ | xs::open => match xs with | [] => [] | x::xs =>
+ (* skip *)
+ if elem_node x closed then @astar' h goal i open closed
+ (* return goal *)
+ else if goal x then (x::xs)
+ (* recur *)
+ else @astar' h goal i (puts f (map (fun y => y::x::xs) (children x)) open) (x::closed)
+end end end.
+
+Definition eg_astar' i G :=
+map id (rev (@astar' eg_h eg_goal i [[G]] [])).
+Eval compute in eg_astar' 10 x1.
+
+
+Theorem astar'_is_astar :
+forall (h:Node->nat) (goal:Node->bool) (i:nat) (open:list (list Node)) (closed:list Node),
+@astar' h goal i open closed = fst (@astar h goal i open closed).
+Proof. intros.
+Admitted.
+
 
 (* --------------------------------------------------- *)
 (* astar is sound *)
+
+(* figure this out first *)
+Fixpoint find y xs :=
+match xs with
+| [] => []
+| x::xs => if x==y then [x] else find y xs
+end.
+Goal forall x y xs, [x] = find y xs -> x==y = true.
+intros. unfold find in *.
+Admitted.
+
+
+Theorem astar_is_sound :
+forall (a:Node) (z:Node),
+forall (h:Node->nat) (goal:Node->bool) (K:nat), consistent h ->
+forall (zs ys:list Node), (z::zs, ys) = @astar h goal K [[a]] []
+->
+goal z = true.
+
+Proof. intros a z h goal K Consistent zs ys A.
+(* match match if if *)
+(* if goal z then (z::_, _) *)
+(* compute in A. *)
+unfold astar in *.
+
+
 
 
 (* --------------------------------------------------- *)
@@ -373,12 +428,13 @@ Eval compute in eg_astar 10 x1.
 
 Lemma astar_visits_every_node : 
 forall (x:Node) (y:Node), path x y ->
+(forall x y, weight x y > 0) ->
 forall (h:Node->nat) (goal:Node->bool), consistent h
 ->
 exists (K:nat) (xs:list Node) (ys:list Node),
 @astar h goal K [[x]] [] = (xs,ys)  /\  elem_node y ys = true.
 
-Proof. intros x y Path h goal Consistent.
+Proof. intros x y Path Positive h goal Consistent.
 (* uses
 
 *)
@@ -389,13 +445,14 @@ Admitted.
 
 Lemma astar_pops_goal :
 forall (x:Node) (z:Node),
+(forall x y, weight x y > 0) ->
 forall (h:Node->nat) (goal:Node->bool), consistent h ->
 forall (K:nat) (seen:list Node),
 elem_node z seen = true
 ->
 exists xs, @astar h goal K [[x]] [] = (z::xs, seen).
 
-Proof. intros x z h goal Consistent K seen Seen.
+Proof. intros x z Positive h goal Consistent K seen Seen.
 assert (seen = [] -> False) as Nonempty. intro Empty.
  apply (elem_implies_nonempty Node beq_node z seen Seen Empty).
 unfold astar.
@@ -404,8 +461,9 @@ Admitted.
 (* ----------------------- *)
 
 Theorem astar_is_complete :
-(* connected graph *)
+(* graph *)
 forall (x:Node) (z:Node), path x z ->
+(forall x y, weight x y > 0) ->
 (* params *)
 forall (h:Node->nat) (goal:Node->bool), consistent h ->
 (* only one goal *)
@@ -414,10 +472,10 @@ forall (h:Node->nat) (goal:Node->bool), consistent h ->
 exists (K:nat) (xs:list Node),
 fst (@astar h goal K [[x]] []) = z::xs.
 
-Proof. intros x z Path h goal Consistent One.
+Proof. intros x z Path Positive h goal Consistent One.
 
 (* A* visits every node, the goal in particular *)
-pose proof (astar_visits_every_node x z Path h goal Consistent) as H.
+pose proof (astar_visits_every_node x z Path Positive h goal Consistent) as H.
 elim H; intro K; clear H; intro H.
 elim H; intro zs; clear H; intro H.
 elim H; intro ys; clear H; intro H. 
@@ -425,7 +483,7 @@ destruct H as [Astar Seen].
 exists K.
 
 (* A* returns the goal if it visits the goal *)
-pose proof (astar_pops_goal x z h goal Consistent K ys Seen) as G.
+pose proof (astar_pops_goal x z Positive h goal Consistent K ys Seen) as G.
 elim G; intro xs; clear G; intro G.
 assert (fst (@astar h goal K [[x]] []) = z :: xs) as G'.
 apply split_tuple in G. 
