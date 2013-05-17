@@ -123,6 +123,7 @@ Eval compute in get_edge x1 [(x2,1), (x3,2)] == 0.
 Eval compute in get_edge x2 [(x2,1), (x3,2)] == 1.
 Eval compute in get_edge x3 [(x2,1), (x3,2)] == 2.
 
+(* todo weight outs Maybe (None if y is not a child of x) *)
 Definition weight (x:Node) (y:Node) : nat := get_edge y (edges x).
 Eval compute in weight x1 x4 == 0.
 Eval compute in weight x1 x2 == 1.
@@ -184,29 +185,81 @@ end.
 (* any A* shares "f" and "g", while "h" and "goal" are params *)
 
 Definition consistent (h:Node->nat) :=
-forall (x:Node) (G:Node), path G x (* forall nodes in graph *)
--> forall y:Node, y child x = true
+forall (x:Node) (y:Node), y child x = true
 -> h x <= weight x y + h y.
 
-Theorem f_is_monotonic :
+Lemma g_homomorphic : 
+forall (ys:list Node) (y:Node) (x:Node) (xs:list Node),
+y child x = true ->
+g (ys ++ [y,x] ++ xs) = g (ys ++ [y]) + g [y,x] + g ([x] ++ xs).
+Proof. intros xs x y ys Child.
+Admitted.
+
+Lemma g_adds_weight : (* strictly *)
 forall (xs:list Node) (x:Node) (y:Node), 
-y child x = true -> weight x y > 0 ->
+y child x = true ->
+g (y::x::xs) = g (x::xs) + weight x y.
+Proof. intros xs x y Child.
+assert (y::x::xs = [y,x]++xs).
+ auto. rewrite H. clear H.
+assert (weight x y = g [y,x]).
+ unfold g. unfold g'. simpl. omega. rewrite H. clear H.
+assert ([y,x] ++ xs = [] ++ [y,x] ++ xs).
+ apply app_nil_l. rewrite H. clear H.
+assert (g (x :: xs) + g [y, x] = g [y, x] + g (x :: xs)).
+ apply plus_comm. rewrite H. clear H.
+assert (g [y, x] + g (x :: xs) = (g ([]++[y]) + g [y, x] + g (x :: xs))).
+ auto. rewrite H. clear H.
+apply (g_homomorphic [] y x xs); auto.
+Qed.
+
+
+Lemma f_is_monotonic : (* weakly *)
+forall (xs:list Node) (x:Node) (y:Node), 
+y child x = true ->
 forall (h:Node->nat), consistent h ->
 (f h) (x::xs) <= (f h) (y::x::xs).
 (* by definition. f x = g x + h x *)
 (* by definition. g y = g x + w x y *)
+
+Proof. intros xs x y Child h Consistent. unfold f.
+assert (g (y::x::xs) = g (x::xs) + weight x y) as G.
+ apply (g_adds_weight xs x y Child).
+ rewrite G.
+rewrite<- plus_assoc.
+rewrite<- (Nat.add_le_mono_l (h x) (weight x y + h y) (g (x::xs))).
+apply Consistent; assumption.
+Qed.
+
+
+Lemma g_increases :
+forall (xs:list Node) (x:Node) (y:Node),
+y child x = true -> weight x y > 0 ->
+forall (h:Node->nat), consistent h ->
+g (x::xs) < g (y::x::xs).
 Proof. intros xs x y Child Positive h Consistent.
-unfold f. unfold g. Admitted.
-(* rewrite<- plus_assoc. *)
-(* rewrite<- (Nat.add_le_mono_l (h x) (weight x y + h y) gx). *)
-(* apply Consistent; auto; constructor. *)
-(* Qed. *)
-(* unfold Consistent; omega. *)
+pose proof (g_adds_weight xs x y Child) as W.
+omega. Qed.
+
+
+(* use as fixpoint decreasing argument *)
+(* either [f_max - f => 0] or [h => 0] *)
+Lemma f_increases_or_h_decreases :
+forall (xs:list Node) (x:Node) (y:Node),
+y child x = true -> weight x y > 0 ->
+forall (h:Node->nat), consistent h ->
+(f h) (x::xs) < (f h) (y::x::xs)  \/  h y < h x.
+Proof. intros xs x y Child Positive h Consistent.
+pose proof (f_is_monotonic xs x y Child h Consistent) as F.
+
+unfold f in *. 
+Admitted.
+
 
 (* --------------------------------------------------- *)
 (* e.g. *)
 
-Function h (x:Node) : nat :=
+Function eg_h (x:Node) : nat :=
 match id x with
  | 1 => 2
  | 2 => 2
@@ -217,9 +270,23 @@ match id x with
  | _ => 0
 end.
 
-Definition f' := f h.
+Function eg_goal (x:Node) : bool := id x == 5. (* x5 is goal *)
 
-Function goal (x:Node) : bool := id x == 5. (* x5 is goal *)
+
+(* --------------------------------------------------- *)
+(* Lemmas *)
+
+Lemma split_tuple : forall (A B : Type) (xy : A*B) (x:A) (y:B),
+xy = (x,y) -> (fst xy) = x /\ (snd xy) = y. Admitted.
+
+Lemma elem_implies_nonempty :
+forall (A:Type) (eq:A->A->bool) (x:A) (ys:list A),
+@elem A eq x ys = true
+->
+(ys = [] -> False).
+Proof. intros A eq x ys In Empty.
+subst. compute in In. inversion In. Qed.
+
 
 (* --------------------------------------------------- *)
 (* astar *)
@@ -272,9 +339,10 @@ Definition Nodes := list Node.
    open ~ todo  .  closed ~ done
 *)
 
-Fixpoint astar {f:list Node -> nat} {goal:Node->bool}
+Fixpoint astar {h:Node->nat} {goal:Node->bool}
 (i:nat) (open:list (list Node)) (closed:list Node)
 : list Node * list Node :=
+let f := f h in
 match i with
 | O => ([] , closed)
 | S i =>
@@ -282,65 +350,16 @@ match i with
  | [] => ([] , closed)
  | xs::open => match xs with | [] => ([] , closed) | x::xs =>
  (* skip *)
- if elem_node x closed then @astar f goal i open closed
+ if elem_node x closed then @astar h goal i open closed
  (* return goal *)
- else if goal x then (rev (x::xs) , (x::closed))
+ else if goal x then ((x::xs) , (x::closed))
  (* recur *)
- else @astar f goal i (puts f (map (fun y => y::x::xs) (children x)) open) (x::closed)
+ else @astar h goal i (puts f (map (fun y => y::x::xs) (children x)) open) (x::closed)
 end end end.
 
 Definition eg_astar i G := 
-let (path,seen) := @astar f' goal i [[G]] []
-in (map id path, map id seen).
+let (path,seen) := @astar eg_h eg_goal i [[G]] []
+in (map id (rev path), map id seen).
 Eval compute in eg_astar 10 x1.
-
-
-
-(* --------------------------------------------------- *)
-(* astar is sound *)
-
-
-
-(* --------------------------------------------------- *)
-(* astar is complete *)
-
-(*
-define. g x = |path G x|
-define. h y <= h x + d x y
-prove. f y >= f x
-prove. must pop all {x|f(x)=n} before pop any {x|f(x)>n}
-prove. forall n |{x|f(x)=n}| < ∞
-define. f ~> g ~> path
-*)
-
-(* in graph -> A* out *)
-(*
-A* will pop every node of some f-value (= f_max) or less in finite time.
-in particular, a goal node (with some path) z has some f(z) = g(z) + h(z) (where h is just a function and g depends on the path). this, as a function of the nodes with smaller or equal f-values, bounds the number of steps that A* must take before getting to z.
-
-the problem is that since f is only monotonic. i.e. f(y) >= f(x) implies that f(y) may equal f(x); however, each time a child y of node x is pushed onto the priority queue with priortity f(y), since the weights of the graph are strictly positive, g(y) > g(x), and for f(y) = f(x), then it must be that h(y) < h(x); h is nonnegative, so after finitely many such steps, h will decrease to zero, and then g must increase until it is the f_max.
-
-for this, i could define an A* Fixpoint that decreases on the f-value. however, since there are a few arguments that may decrease:
-f_max - f_curr  ==>  0
-f_max - g_curr  ==>  0
-h_curr          ==>  0
-
-g always increases, but either f increases or h decreases, and i think i need to prove this non-structural recursion terminates (like you do with mergesort).
-
-i thought of proving an easier theorem, that BFS is complete (perhaps strengthening the assumptions with knowing the maximum breadth), as an instance of my definition of A*.
-
-BFS is A* with
-h _ = 0
-w _ _ = 1
-
-thus
-f = g + h = g = depth
-
-but i ran out of time
-*)
-
-(* --------------------------------------------------- *)
-(* etc *)
-Print Grammar constr.
 
 
