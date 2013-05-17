@@ -363,35 +363,24 @@ in (map id (rev path), map id seen).
 Eval compute in eg_astar 10 x1.
 
 
-Fixpoint astar' {h:Node->nat} {goal:Node->bool}
-(i:nat) (open:list (list Node)) (closed:list Node)
-: list Node :=
-let f := f h in
-match i with
-| O => []
-| S i =>
- match open with
- | [] => []
- | xs::open => match xs with | [] => [] | x::xs =>
- (* skip *)
- if elem_node x closed then @astar' h goal i open closed
- (* return goal *)
- else if goal x then (x::xs)
- (* recur *)
- else @astar' h goal i (puts f (map (fun y => y::x::xs) (children x)) open) (x::closed)
-end end end.
-
-Definition eg_astar' i G :=
-map id (rev (@astar' eg_h eg_goal i [[G]] [])).
-Eval compute in eg_astar' 10 x1.
+(* Theorem astar_is_monotonic : *)
+(* forall (x:Node) (y:Node) (z:Node), path x y -> path x z -> *)
+(* forall (h:Node->nat) (goal:Node->bool), consistent h -> *)
+(* forall (K:nat) (p c:list Node), (y::p, c) = @astar h goal K [[x]] [] -> *)
+(* forall (K':nat) (p' c':list Node), (z::p', c') = @astar h goal K' [[x]] [] -> *)
+(* (f h) (y::p) <= (f h) (z::p') *)
+(* -> *)
 
 
-Theorem astar'_is_astar :
-forall (h:Node->nat) (goal:Node->bool) (i:nat) (open:list (list Node)) (closed:list Node),
-@astar' h goal i open closed = fst (@astar h goal i open closed).
-Proof. intros.
+Theorem astar_is_optimal :
+forall (x:Node) (z:Node) (p:path x z),
+forall (h:Node->nat) (goal:Node->bool) (K:nat), consistent h ->
+forall (zs ys:list Node), (z::zs, ys) = @astar h goal K [[x]] []
+->
+g (z::zs) <= path_length p.
+
+Proof. intros x z p h goal K Consistent zs ys A.
 Admitted.
-
 
 (* --------------------------------------------------- *)
 (* astar is sound *)
@@ -403,7 +392,6 @@ match xs with
 | x::xs => if x==y then [x] else find y xs
 end.
 Goal forall x y xs, [x] = find y xs -> x==y = true.
-intros. unfold find in *.
 Admitted.
 
 
