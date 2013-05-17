@@ -408,6 +408,7 @@ Proof. intros a z h goal K Consistent zs ys A.
 (* compute in A. *)
 unfold astar in *.
 
+Admitted.
 
 
 
