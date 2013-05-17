@@ -341,7 +341,7 @@ Definition Nodes := list Node.
 
 Fixpoint astar {h:Node->nat} {goal:Node->bool}
 (i:nat) (open:list (list Node)) (closed:list Node)
-: list Node * list Node :=
+: list Node * list Node :=      (* todo list (forall x y, path x y) *)
 let f := f h in
 match i with
 | O => ([] , closed)
@@ -392,7 +392,11 @@ match xs with
 | x::xs => if x==y then [x] else find y xs
 end.
 Goal forall x y xs, [x] = find y xs -> x==y = true.
-Admitted.
+intros. generalize dependent x.
+induction xs; intros. inversion H.
+simpl in H. destruct (a==y) eqn:AeqY.
+inversion H. subst. auto. auto.
+Qed.
 
 
 Theorem astar_is_sound :
@@ -406,7 +410,7 @@ Proof. intros a z h goal K Consistent zs ys A.
 (* match match if if *)
 (* if goal z then (z::_, _) *)
 (* compute in A. *)
-unfold astar in *.
+unfold astar in *. simpl in A.
 
 Admitted.
 
