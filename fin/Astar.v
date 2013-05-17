@@ -363,3 +363,73 @@ in (map id (rev path), map id seen).
 Eval compute in eg_astar 10 x1.
 
 
+
+(* --------------------------------------------------- *)
+(* astar is sound *)
+
+
+(* --------------------------------------------------- *)
+(* astar is complete *)
+
+Lemma astar_visits_every_node : 
+forall (x:Node) (y:Node), path x y ->
+forall (h:Node->nat) (goal:Node->bool), consistent h
+->
+exists (K:nat) (xs:list Node) (ys:list Node),
+@astar h goal K [[x]] [] = (xs,ys)  /\  elem_node y ys = true.
+
+Proof. intros x y Path h goal Consistent.
+(* uses
+
+*)
+Admitted.
+
+
+(* ----------------------- *)
+
+Lemma astar_pops_goal :
+forall (x:Node) (z:Node),
+forall (h:Node->nat) (goal:Node->bool), consistent h ->
+forall (K:nat) (seen:list Node),
+elem_node z seen = true
+->
+exists xs, @astar h goal K [[x]] [] = (z::xs, seen).
+
+Proof. intros x z h goal Consistent K seen Seen.
+assert (seen = [] -> False) as Nonempty. intro Empty.
+ apply (elem_implies_nonempty Node beq_node z seen Seen Empty).
+unfold astar.
+Admitted.
+
+(* ----------------------- *)
+
+Theorem astar_is_complete :
+(* connected graph *)
+forall (x:Node) (z:Node), path x z ->
+(* params *)
+forall (h:Node->nat) (goal:Node->bool), consistent h ->
+(* only one goal *)
+(forall y:Node, goal y = true <-> beq_node y z = true)
+->
+exists (K:nat) (xs:list Node),
+fst (@astar h goal K [[x]] []) = z::xs.
+
+Proof. intros x z Path h goal Consistent One.
+
+(* A* visits every node, the goal in particular *)
+pose proof (astar_visits_every_node x z Path h goal Consistent) as H.
+elim H; intro K; clear H; intro H.
+elim H; intro zs; clear H; intro H.
+elim H; intro ys; clear H; intro H. 
+destruct H as [Astar Seen].
+exists K.
+
+(* A* returns the goal if it visits the goal *)
+pose proof (astar_pops_goal x z h goal Consistent K ys Seen) as G.
+elim G; intro xs; clear G; intro G.
+assert (fst (@astar h goal K [[x]] []) = z :: xs) as G'.
+apply split_tuple in G. 
+elim G; intro G'; clear G; intro G. assumption.
+exists xs. assumption.
+
+Qed.
